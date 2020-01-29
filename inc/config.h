@@ -11,7 +11,6 @@
 // Server Configuration:
 #define SERVER_PORT 9876
 
-
 // Database Configuration:
 #define MAX_DATABASE_REGISTERS  50
 
