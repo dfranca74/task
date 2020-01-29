@@ -35,6 +35,8 @@ static int callback_connection (void *cls,
 static int callback_print_out_key (void *cls, enum MHD_ValueKind kind, const char *key, const char *value);
 #endif
 
+static const char *hello_page  = "<html><body>Hello, Smartpay!</body></html>";
+
 error_t create_server_thread(void)
 {
     error_t result = ERROR_NO;
@@ -109,9 +111,33 @@ static int callback_connection (void *cls,
     (void)(version);
     (void)(upload_data);
     (void)(upload_data_size);
-    (void)(con_cls);
 
-    const char *hello_page  = "<html><body>Hello, Smartpay!</body></html>";
+    static int aptr;
+
+    // Filter for methods GET and POST:
+    // Accordingly to the specification we need three end points:
+    // 1) Create a new terminal (POST)
+    // 2) Read the details of an existing terminal (GET)
+    // 3) Return a list of all terminals (GET)
+
+    if (0 != strcmp(method, MHD_HTTP_METHOD_GET) &&
+        0 != strcmp(method, MHD_HTTP_METHOD_POST))
+    {
+        printf("%s - HTTP method %s is not supported\n", __func__, method);
+        return MHD_NO;
+    }
+
+    // Documentation says that:
+    // "The correct approach is to simply not queue a message on the first callback unless there is an error"
+    // This is very curious. Did not fully understood why....
+    if (&aptr != *con_cls)
+    {
+        *con_cls = &aptr;
+        return MHD_YES;
+    }
+
+    *con_cls = NULL;
+
     const size_t len = strlen(hello_page);
     void *page = (void*)(hello_page);
 
