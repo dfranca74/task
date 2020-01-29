@@ -16,6 +16,8 @@
 
 #include "server.h"
 
+#define DEBUG_SERVER
+
 static pthread_t server_id;
 
 static void *worker_thread(void *args);
@@ -27,6 +29,11 @@ static int callback_connection (void *cls,
                                 const char *upload_data,
                                 size_t *upload_data_size,
                                 void **con_cls);
+
+// Auxiliary functions to help debug/understand how http protocol works:
+#ifdef DEBUG_SERVER
+static int callback_print_out_key (void *cls, enum MHD_ValueKind kind, const char *key, const char *value);
+#endif
 
 error_t create_server_thread(void)
 {
@@ -108,6 +115,12 @@ static int callback_connection (void *cls,
     const size_t len = strlen(hello_page);
     void *page = (void*)(hello_page);
 
+    // The following code is only for debug/purposes (to help me understand how this server and http works):
+#ifdef DEBUG_SERVER
+    printf ("New %s request for %s using version %s\n", method, url, version);
+    MHD_get_connection_values (connection, MHD_HEADER_KIND, &callback_print_out_key, NULL);
+#endif
+
     struct MHD_Response *response = MHD_create_response_from_buffer (len, page, MHD_RESPMEM_PERSISTENT);
 
     if (!response)
@@ -126,8 +139,15 @@ static int callback_connection (void *cls,
     MHD_destroy_response (response);
 
     return ret;
-
-
-
 }
+
+#ifdef DEBUG_SERVER
+static int callback_print_out_key (void *cls, enum MHD_ValueKind kind, const char *key, const char *value)
+{
+    (void)(cls);
+    (void)(kind);
+    printf ("%s: %s\n", key, value);
+    return MHD_YES;
+}
+#endif
 
