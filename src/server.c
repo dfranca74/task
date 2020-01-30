@@ -15,6 +15,8 @@
 #include <string.h>
 
 #include "server.h"
+#include "utils.h"
+#include "database.h"
 
 #define DEBUG_SERVER
 
@@ -223,6 +225,35 @@ static int handle_helper_pages(struct MHD_Connection *connection, const char *de
 
 static int handle_request_terminal_info(struct MHD_Connection *connection, const char *id)
 {
-    // do nothing yet
-    return handle_helper_pages(connection, id);
+    long int terminal_id = 0;
+
+    if (ERROR_NO != convert_str_to_int(id, &terminal_id))
+    {
+        return MHD_NO;
+    }
+
+    // Ok, here we have a valid number.
+    // Do we have in our database any terminal with this same number id ?
+
+    // Just to test...oh my God...still have to add all the json logic :) :) How to parse it ?? External library ?
+    const char *card = NULL;
+    const char *terminal = NULL;
+
+    char buffer[512] = { 0 };
+
+    if (ERROR_NO == get_terminal(terminal_id, &card, &terminal))
+    {
+        snprintf(buffer,
+                sizeof(buffer),
+                "<html><body>Terminal id[%ld]: card=%s - type=%s</body></html>",
+                terminal_id, card, terminal);
+    }
+    else
+    {
+        snprintf(buffer,
+                sizeof(buffer), "<html><body>Terminal id[%ld] not stored in database</body></html>",
+                terminal_id);
+    }
+
+    return handle_helper_pages(connection, buffer);
 }
