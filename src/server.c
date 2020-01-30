@@ -30,7 +30,9 @@ static int callback_connection (void *cls,
                                 size_t *upload_data_size,
                                 void **con_cls);
 
-static int handle_greetings_page(struct MHD_Connection *connection);
+static int handle_helper_pages(struct MHD_Connection *connection, const char *helper);
+static int handle_request_terminal_info(struct MHD_Connection *connection, const char *id);
+static int handle_unknown_url(struct MHD_Connection *connection, const char *url);
 
 // Auxiliary functions to help debug/understand how http protocol works:
 #ifdef DEBUG_SERVER
@@ -147,10 +149,29 @@ static int callback_connection (void *cls,
     MHD_get_connection_values (connection, MHD_HEADER_KIND, &callback_print_out_key, NULL);
 #endif
 
-    // Simplest possible end point: greetings page
-    if ((0 == strcmp (url, "/greetings")) && (0 == strcasecmp (method, MHD_HTTP_METHOD_GET)))
+    // First end point: greetings page
+    if ((0 == strcmp(url, "/greetings")) && (0 == strcasecmp(method, MHD_HTTP_METHOD_GET)))
     {
-       return handle_greetings_page (connection);
+       return handle_helper_pages(connection, greetings_page);
+    }
+
+    // Second end point: request terminal information based on its ID number
+    // I will propose this end point url:
+    // http://localhost:9876/terminal/read/x    <--- where 'x' will be the terminal id to be searched in the database and prepare the json response
+    if ((NULL != strstr(url, "/terminal/read/")) && (0 == strcasecmp(method, MHD_HTTP_METHOD_GET)))
+    {
+        // This first substring comparison is relatively weak but enough here (we will discard garbage)
+        // The sanitized search for a valid id will be made inside next function:
+        const char *id = strrchr(url, '/');
+        if (id)
+        {
+            // Advance for what is supposed to be the ID number:
+            ++id;
+            return handle_request_terminal_info(connection, id);
+        }
+
+        (void) handle_unknown_url(connection, url);
+        return MHD_NO;
     }
 
     printf("Not ran any end point\n");
@@ -167,10 +188,18 @@ static int callback_print_out_key (void *cls, enum MHD_ValueKind kind, const cha
 }
 #endif
 
-static int handle_greetings_page(struct MHD_Connection *connection)
+static int handle_unknown_url(struct MHD_Connection *connection, const char *url)
 {
-    const size_t len = strlen(greetings_page);
-    void *page = (void*)(greetings_page);
+    char buffer[512] = { 0 };
+    snprintf(buffer, sizeof(buffer), "<html><body>The url: %s is unknown by the server</body></html>", url);
+
+    return handle_helper_pages(connection, buffer);
+}
+
+static int handle_helper_pages(struct MHD_Connection *connection, const char *description)
+{
+    const size_t len = strlen(description);
+    void *page = (void*)(description);
 
     struct MHD_Response *response = MHD_create_response_from_buffer (len, page, MHD_RESPMEM_PERSISTENT);
 
@@ -192,3 +221,10 @@ static int handle_greetings_page(struct MHD_Connection *connection)
     return ret;
 }
 
+static int handle_request_terminal_info(struct MHD_Connection *connection, const char *id)
+{
+    // do nothing yet
+    (void)(connection);
+    printf("Called %s - id: %s\n", __func__, id);
+    return MHD_YES;
+}
