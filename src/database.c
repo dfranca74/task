@@ -21,6 +21,8 @@ static int id_register = 1;
 
 #define AVAILABLE_SLOT -1
 
+#define DEBUG_DATABASE
+
 static const char *CARD_TYPE_NAMES[] =
 {
         "Visa",
@@ -47,6 +49,22 @@ void init_database(void)
     id_register = 1;
     added_terminals = 0;
 
+#ifdef DEBUG_DATABASE
+    // Just for debuging purposes
+    // Simulate a few terminals added into database
+
+    size_t index = 0;
+    buffer[index].id = id_register++;
+    buffer[index].card = CARD_TYPE_NAMES[VISA];
+    buffer[index].transaction = TRANSACTION_TYPE_NAMES[SAVINGS];
+
+    index = 10;
+    buffer[index].id = id_register++;
+    buffer[index].card = CARD_TYPE_NAMES[MASTERCARD];
+    buffer[index].transaction = TRANSACTION_TYPE_NAMES[CHEQUE];
+
+    added_terminals += 2;
+#endif
 }
 
 size_t get_total_terminal(void)
