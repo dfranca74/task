@@ -170,12 +170,10 @@ static int callback_connection (void *cls,
             return handle_request_terminal_info(connection, id);
         }
 
-        (void) handle_unknown_url(connection, url);
-        return MHD_NO;
+        return handle_unknown_url(connection, url);
     }
 
-    printf("Not ran any end point\n");
-    return MHD_NO;
+    return handle_unknown_url(connection, url);
 }
 
 #ifdef DEBUG_SERVER
@@ -191,7 +189,9 @@ static int callback_print_out_key (void *cls, enum MHD_ValueKind kind, const cha
 static int handle_unknown_url(struct MHD_Connection *connection, const char *url)
 {
     char buffer[512] = { 0 };
-    snprintf(buffer, sizeof(buffer), "<html><body>The url: %s is unknown by the server</body></html>", url);
+    snprintf(buffer, sizeof(buffer), "<html><body>The url: '%s' is unknown by the server</body></html>", url);
+
+    printf("%s - %s\n", __func__, buffer);
 
     return handle_helper_pages(connection, buffer);
 }
@@ -201,7 +201,7 @@ static int handle_helper_pages(struct MHD_Connection *connection, const char *de
     const size_t len = strlen(description);
     void *page = (void*)(description);
 
-    struct MHD_Response *response = MHD_create_response_from_buffer (len, page, MHD_RESPMEM_PERSISTENT);
+    struct MHD_Response *response = MHD_create_response_from_buffer (len, page, MHD_RESPMEM_MUST_COPY);
 
     if (!response)
     {
@@ -224,7 +224,5 @@ static int handle_helper_pages(struct MHD_Connection *connection, const char *de
 static int handle_request_terminal_info(struct MHD_Connection *connection, const char *id)
 {
     // do nothing yet
-    (void)(connection);
-    printf("Called %s - id: %s\n", __func__, id);
-    return MHD_YES;
+    return handle_helper_pages(connection, id);
 }
