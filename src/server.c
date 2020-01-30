@@ -30,12 +30,14 @@ static int callback_connection (void *cls,
                                 size_t *upload_data_size,
                                 void **con_cls);
 
+static int handle_greetings_page(struct MHD_Connection *connection);
+
 // Auxiliary functions to help debug/understand how http protocol works:
 #ifdef DEBUG_SERVER
 static int callback_print_out_key (void *cls, enum MHD_ValueKind kind, const char *key, const char *value);
 #endif
 
-static const char *hello_page  = "<html><body>Hello, Smartpay!</body></html>";
+static const char *greetings_page  = "<html><body>Hello, how are you ?</body></html>";
 
 error_t create_server_thread(void)
 {
@@ -138,14 +140,37 @@ static int callback_connection (void *cls,
 
     *con_cls = NULL;
 
-    const size_t len = strlen(hello_page);
-    void *page = (void*)(hello_page);
-
+    // Start testing the end points:
     // The following code is only for debug/purposes (to help me understand how this server and http works):
 #ifdef DEBUG_SERVER
-    printf ("New %s request for %s using version %s\n", method, url, version);
+    printf ("New method:%s request for url:%s using version %s\n", method, url, version);
     MHD_get_connection_values (connection, MHD_HEADER_KIND, &callback_print_out_key, NULL);
 #endif
+
+    // Simplest possible end point: greetings page
+    if ((0 == strcmp (url, "/greetings")) && (0 == strcasecmp (method, MHD_HTTP_METHOD_GET)))
+    {
+       return handle_greetings_page (connection);
+    }
+
+    printf("Not ran any end point\n");
+    return MHD_NO;
+}
+
+#ifdef DEBUG_SERVER
+static int callback_print_out_key (void *cls, enum MHD_ValueKind kind, const char *key, const char *value)
+{
+    (void)(cls);
+    (void)(kind);
+    printf ("%s: %s\n", key, value);
+    return MHD_YES;
+}
+#endif
+
+static int handle_greetings_page(struct MHD_Connection *connection)
+{
+    const size_t len = strlen(greetings_page);
+    void *page = (void*)(greetings_page);
 
     struct MHD_Response *response = MHD_create_response_from_buffer (len, page, MHD_RESPMEM_PERSISTENT);
 
@@ -166,14 +191,4 @@ static int callback_connection (void *cls,
 
     return ret;
 }
-
-#ifdef DEBUG_SERVER
-static int callback_print_out_key (void *cls, enum MHD_ValueKind kind, const char *key, const char *value)
-{
-    (void)(cls);
-    (void)(kind);
-    printf ("%s: %s\n", key, value);
-    return MHD_YES;
-}
-#endif
 
