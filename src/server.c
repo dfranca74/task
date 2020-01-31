@@ -13,12 +13,24 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include "server.h"
 #include "utils.h"
 #include "database.h"
 
 #define DEBUG_SERVER
+
+// Following struct will be used to handle a POST command
+// Reference: https://www.gnu.org/software/libmicrohttpd/tutorial.html#Processing-POST-data
+typedef struct
+{
+    struct MHD_PostProcessor *pp;
+
+    char key_card[32];
+    char key_transaction[32];
+
+} connection_info_struct_t;
 
 static pthread_t server_id;
 
@@ -31,6 +43,16 @@ static int callback_connection (void *cls,
                                 const char *upload_data,
                                 size_t *upload_data_size,
                                 void **con_cls);
+
+static int iterate_post_add(void *coninfo_cls,
+                            enum MHD_ValueKind kind,
+                            const char *key,
+                            const char *filename,
+                            const char *content_type,
+                            const char *transfer_encoding,
+                            const char *data,
+                            uint64_t off,
+                            size_t size);
 
 static int handle_helper_pages(struct MHD_Connection *connection, const char *helper);
 static int handle_request_terminal_info(struct MHD_Connection *connection, const char *id);
@@ -84,7 +106,7 @@ static void *worker_thread(void *args)
     }
 
     // ToDo: Put here a condition variable to exit the thread (signaled by main.c when a CTRL+C was sent)
-    size_t wait = 30;
+    size_t wait = 60;
     while (wait--)
     {
         sleep(1);
@@ -118,31 +140,42 @@ static int callback_connection (void *cls,
     (void)(upload_data);
     (void)(upload_data_size);
 
-    static int aptr;
+    if (NULL == *con_cls)
+    {
+        // Allocate a connection info struct in heap:
+        connection_info_struct_t *info = calloc(1, sizeof(connection_info_struct_t));
 
-    // Filter for methods GET and POST:
+        if (!info)
+        {
+            printf("Failed to allocate connection_info_struct_t\n");
+            return MHD_NO;
+        }
+
+        // Verify if the new request is a POST. If yes the post processor will be created:
+        if (0 == strcmp(method, MHD_HTTP_METHOD_POST))
+        {
+            info->pp = MHD_create_post_processor(connection, 1024, iterate_post_add, (void *)info);
+
+            if (NULL == info->pp)
+            {
+                free(info);
+                info = NULL;
+                printf("Failed to create post processor\n");
+                return MHD_NO;
+            }
+
+            // Now, I thing I understood why this:
+            // "The correct approach is to simply not queue a message on the first callback unless there is an error"
+            *con_cls = (void*)info;
+            return MHD_YES;
+        }
+    }
+
     // Accordingly to the specification we need three end points:
     // 1) Create a new terminal (POST)
     // 2) Read the details of an existing terminal (GET)
     // 3) Return a list of all terminals (GET)
 
-    if (0 != strcmp(method, MHD_HTTP_METHOD_GET) &&
-        0 != strcmp(method, MHD_HTTP_METHOD_POST))
-    {
-        printf("%s - HTTP method %s is not supported\n", __func__, method);
-        return MHD_NO;
-    }
-
-    // Documentation says that:
-    // "The correct approach is to simply not queue a message on the first callback unless there is an error"
-    // This is very curious. Did not fully understood why....
-    if (&aptr != *con_cls)
-    {
-        *con_cls = &aptr;
-        return MHD_YES;
-    }
-
-    *con_cls = NULL;
 
     // Start testing the end points:
     // The following code is only for debug/purposes (to help me understand how this server and http works):
@@ -174,6 +207,37 @@ static int callback_connection (void *cls,
 
         return handle_unknown_url(connection, url);
     }
+
+    // I ***MUST*** need to have something working to show.
+    // I will first code a regular POST data (no json) to add new terminal and debug it.
+    // Then I will change the logic to add Json processing (my 48 hours limit is finishing)
+    if ((0 == strcmp(url, "/terminal/add")) && (0 == strcasecmp(method, MHD_HTTP_METHOD_POST)))
+    {
+        connection_info_struct_t *info = *con_cls; // Safe ?
+
+        if (0 != *upload_data_size)
+        {
+            MHD_post_process (info->pp, upload_data, *upload_data_size);
+            *upload_data_size = 0;
+            return MHD_YES;
+        }
+        else
+        {
+            // How to know when all keys were received ?
+            // Here I ***suppose*** the two keys were already parsed and their values stored into info struct (need to debug to be sure).
+            printf("card: %s - transaction: %s\n", info->key_card, info->key_transaction);
+
+            char buffer[256] = { 0 };
+            snprintf(buffer,
+                    sizeof(buffer),
+                    "<html><body>POST message received: card: %s - transaction: %s</body></html>",
+                    info->key_card, info->key_transaction);
+            return handle_helper_pages(connection, buffer);
+        }
+    }
+
+    // Will start with this initial curl syntax (not json yet):
+    // curl -d "card=value1&transaction=value2" -X POST http://localhost:9876/terminal/add
 
     return handle_unknown_url(connection, url);
 }
@@ -256,4 +320,48 @@ static int handle_request_terminal_info(struct MHD_Connection *connection, const
     }
 
     return handle_helper_pages(connection, buffer);
+}
+
+static int iterate_post_add(void *coninfo_cls,
+                            enum MHD_ValueKind kind,
+                            const char *key,
+                            const char *filename,
+                            const char *content_type,
+                            const char *transfer_encoding,
+                            const char *data,
+                            uint64_t off,
+                            size_t size)
+{
+    connection_info_struct_t *info = coninfo_cls;
+
+    (void)(kind);
+    (void)(filename);
+    (void)(content_type);
+    (void)(transfer_encoding);
+    (void)(off);
+    (void)(size);
+
+    if (0 == strcmp(key, "card"))
+    {
+        strncpy(info->key_card, data, sizeof(info->key_card));
+    }
+    else if (0 == strcmp(key, "transaction"))
+    {
+        strncpy(info->key_transaction, data, sizeof(info->key_transaction));
+    }
+    else
+    {
+        printf("Unexpected key value: %s", key);
+        return MHD_NO;
+    }
+
+    if (0 != strlen(info->key_card) &&
+        0 != strlen(info->key_transaction))
+    {
+        // Ok, we have received all values:
+        return MHD_NO;
+    }
+
+    // We have more data to be received:
+    return MHD_YES;
 }
