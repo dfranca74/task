@@ -7,6 +7,8 @@
 
 #include <stddef.h>
 #include <stdio.h>
+#include <stdbool.h>
+#include <string.h>
 
 #include "database.h"
 #include "config.h"
@@ -23,27 +25,13 @@ static int id_register = 1;
 
 #define DEBUG_DATABASE
 
-static const char *CARD_TYPE_NAMES[] =
-{
-        "Visa",
-        "MasterCard",
-        "EFTPOS"
-};
-
-static const char *TRANSACTION_TYPE_NAMES[] =
-{
-        "Cheque",
-        "Savings",
-        "Credit"
-};
-
 void init_database(void)
 {
+    memset(buffer, 0x00, sizeof(buffer));
+
     for (size_t i = 0; i < MAX_DATABASE_REGISTERS; ++i)
     {
         buffer[i].id = AVAILABLE_SLOT;
-        buffer[i].card = NULL;
-        buffer[i].transaction = NULL;
     }
 
     id_register = 1;
@@ -55,13 +43,13 @@ void init_database(void)
 
     size_t index = 0;
     buffer[index].id = id_register++;
-    buffer[index].card = CARD_TYPE_NAMES[VISA];
-    buffer[index].transaction = TRANSACTION_TYPE_NAMES[SAVINGS];
+    strncpy(buffer[index].card, VISA, MAX_VALUE_SIZE);
+    strncpy(buffer[index].transaction, CREDIT, MAX_VALUE_SIZE);
 
     index = 10;
     buffer[index].id = id_register++;
-    buffer[index].card = CARD_TYPE_NAMES[MASTERCARD];
-    buffer[index].transaction = TRANSACTION_TYPE_NAMES[CHEQUE];
+    strncpy(buffer[index].card, MASTER, MAX_VALUE_SIZE);
+    strncpy(buffer[index].transaction, SAVINGS, MAX_VALUE_SIZE);
 
     added_terminals += 2;
 #endif
@@ -72,12 +60,10 @@ size_t get_total_terminal(void)
     return added_terminals;
 }
 
-error_t get_terminal(int id, const char **card, const char **transaction)
+error_t get_terminal(terminal_t *terminal)
 {
-    error_t result = ERROR_TERMINAL_NOT_FOUND;
-
     // Sanity check arguments:
-    if (id < 0 || !card || !transaction)
+    if (!terminal)
     {
         printf("%s - Invalid argument(s)\n", __func__);
         return ERROR_INVALID_ARGUMENT;
@@ -86,62 +72,57 @@ error_t get_terminal(int id, const char **card, const char **transaction)
     // Sanity check: buffer is empty
     if (!added_terminals)
     {
-        printf("%s - Terminal Id=%d is not present in database\n", __func__, id);
+        printf("%s - Terminal Id=%ld is not present in database\n", __func__, terminal->id);
         return ERROR_TERMINAL_NOT_FOUND;
     }
 
-    // Traverse the buffer searching for a terminal with an "id" match:
-    for (size_t i = 0; i < MAX_DATABASE_REGISTERS; ++i)
-    {
-        if (id == buffer[i].id)
-        {
-            *card = buffer[i].card;
-            *transaction = buffer[i].transaction;
-            result = ERROR_NO;
+     bool found = false;
 
-            break;
+    // Traverse the buffer searching for a terminal with an "id" match:
+    for (size_t i = 0; i < MAX_DATABASE_REGISTERS && !found; ++i)
+    {
+        if (terminal->id == buffer[i].id)
+        {
+            strncpy(terminal->card, buffer[i].card, MAX_VALUE_SIZE);
+            strncpy(terminal->transaction, buffer[i].transaction, MAX_VALUE_SIZE);
+            found = true; // break the loop
         }
     }
 
-    return result;
+    return (found) ? ERROR_NO : ERROR_TERMINAL_NOT_FOUND;
 }
 
-error_t add_terminal(card_t type, transaction_t transaction, int *id)
+error_t add_terminal(terminal_t *terminal)
 {
-    error_t result = ERROR_NO;
-
     // Sanity check the arguments:
-    if (!id || (type < VISA || type > EFTPOS) || (transaction < CHEQUE || transaction > CREDIT))
+    if (!terminal)
     {
         printf("%s - Invalid argument(s)\n", __func__);
         return ERROR_INVALID_ARGUMENT;
     }
 
+    bool added = false;
+
     if (added_terminals < MAX_DATABASE_REGISTERS)
     {
         // Traverse the buffer to find the first slot available:
-        for (size_t i = 0; i < MAX_DATABASE_REGISTERS; ++i)
+        for (size_t i = 0; i < MAX_DATABASE_REGISTERS && !added; ++i)
         {
             // A terminal with id value -1 means it is available and ready to be used:
             if (AVAILABLE_SLOT == buffer[i].id)
             {
-                // Avoid allocating memory: just point to the correct constant string value
-                buffer[i].id = id_register++;
-                buffer[i].card = CARD_TYPE_NAMES[type];
-                buffer[i].transaction = TRANSACTION_TYPE_NAMES[transaction];
+                terminal->id = id_register++;
+                buffer[i].id = terminal->id;
 
-                *id = buffer[i].id;
+                strncpy(buffer[i].card, terminal->card, MAX_VALUE_SIZE);
+                strncpy(buffer[i].transaction, terminal->transaction, MAX_VALUE_SIZE);
+
                 ++added_terminals;
-                break;
+
+                added = true; // break the loop
             }
         }
     }
-    else
-    {
-        result = ERROR_DATABASE_FULL;
-    }
 
-    return result;
+    return (added) ? ERROR_NO : ERROR_DATABASE_FULL;
 }
-
-

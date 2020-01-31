@@ -289,9 +289,9 @@ static int handle_helper_pages(struct MHD_Connection *connection, const char *de
 
 static int handle_request_terminal_info(struct MHD_Connection *connection, const char *id)
 {
-    long int terminal_id = 0;
+    terminal_t terminal;
 
-    if (ERROR_NO != convert_str_to_int(id, &terminal_id))
+    if (ERROR_NO != convert_str_to_int(id, &terminal.id))
     {
         return MHD_NO;
     }
@@ -300,23 +300,20 @@ static int handle_request_terminal_info(struct MHD_Connection *connection, const
     // Do we have in our database any terminal with this same number id ?
 
     // Just to test...oh my God...still have to add all the json logic :) :) How to parse it ?? External library ?
-    const char *card = NULL;
-    const char *terminal = NULL;
+    char buffer[256] = { 0 };
 
-    char buffer[512] = { 0 };
-
-    if (ERROR_NO == get_terminal(terminal_id, &card, &terminal))
+    if (ERROR_NO == get_terminal(&terminal))
     {
         snprintf(buffer,
                 sizeof(buffer),
                 "<html><body>Terminal id[%ld]: card=%s - type=%s</body></html>",
-                terminal_id, card, terminal);
+                terminal.id, terminal.card, terminal.transaction);
     }
     else
     {
         snprintf(buffer,
                 sizeof(buffer), "<html><body>Terminal id[%ld] not stored in database</body></html>",
-                terminal_id);
+                terminal.id);
     }
 
     return handle_helper_pages(connection, buffer);
