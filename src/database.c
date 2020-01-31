@@ -23,7 +23,7 @@ static int id_register = 1;
 
 #define AVAILABLE_SLOT -1
 
-#define DEBUG_DATABASE
+#undef DEBUG_DATABASE
 
 void init_database(void)
 {
@@ -55,9 +55,32 @@ void init_database(void)
 #endif
 }
 
-size_t get_total_terminal(void)
+void get_terminal_all(char *pbuf, size_t size)
 {
-    return added_terminals;
+    // We will iterate through database and copy terminal info into buffer:
+    // Format: id:x card:y type:z\n
+
+    if (added_terminals)
+    {
+        int offset = 0;
+
+        for (size_t i = 0; i < MAX_DATABASE_REGISTERS; ++i)
+        {
+            if (AVAILABLE_SLOT != buffer[i].id)
+            {
+                int total = snprintf(pbuf + offset,
+                                     size - offset,
+                                     "id:%ld card:%s transaction:%s\n",
+                                     buffer[i].id, buffer[i].card, buffer[i].transaction);
+
+                offset += total;
+            }
+        }
+    }
+    else
+    {
+        snprintf(pbuf, size, "Database is empty\n");
+    }
 }
 
 error_t get_terminal(terminal_t *terminal)

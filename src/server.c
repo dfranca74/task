@@ -217,6 +217,17 @@ static int callback_connection (void *cls,
         return handle_unknown_url(connection, url);
     }
 
+    // Endpoint to read all terminals stored in the database
+    if ((NULL != strstr(url, "/terminal/all")) && (0 == strcasecmp(method, MHD_HTTP_METHOD_GET)))
+    {
+        char buffer[4096] = { 0 };
+        int offset = snprintf(buffer, sizeof(buffer), "<html><body>\n");
+        get_terminal_all(buffer + offset, sizeof(buffer) - offset);
+        offset = strlen(buffer);
+        snprintf(buffer + offset, sizeof(buffer) - offset, "</body></html>");
+        return handle_helper_pages(connection, buffer);
+    }
+
     // I ***MUST*** need to have something working to show.
     // I will first code a regular POST data (no json) to add new terminal and debug it.
     // Then I will change the logic to add Json processing (my 48 hours limit is finishing)

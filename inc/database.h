@@ -19,8 +19,9 @@ typedef struct
 } terminal_t;
 
 void init_database(void);
+void get_terminal_all(char *buffer, size_t size);
 error_t get_terminal(terminal_t *terminal);
 error_t add_terminal(terminal_t *terminal);
-size_t get_total_terminal(void);
+
 
 #endif /* DATABASE_H_ */
