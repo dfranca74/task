@@ -14,15 +14,15 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <semaphore.h>
 
 #include "server.h"
 #include "utils.h"
 #include "database.h"
 #include "endpoints_handler.h"
 
-#define DEBUG_SERVER
-
 static pthread_t server_id;
+static sem_t semaphore;
 
 static void *worker_thread(void *args);
 static int callback_connection (void *cls,
@@ -56,6 +56,9 @@ error_t create_server_thread(void)
 {
     error_t result = ERROR_NO;
 
+    sem_init(&semaphore, 0, 1);
+    sem_wait(&semaphore);
+
     const int error = pthread_create(&server_id, NULL, worker_thread, NULL);
 
     if (error)
@@ -70,6 +73,11 @@ error_t create_server_thread(void)
 void wait_server_thread(void)
 {
     pthread_join(server_id, NULL);
+}
+
+void exit_server_thread(void)
+{
+    sem_post(&semaphore);
 }
 
 static void *worker_thread(void *args)
@@ -95,12 +103,8 @@ static void *worker_thread(void *args)
         return NULL;
     }
 
-    // ToDo: Put here a condition variable to exit the thread (signaled by main.c when a CTRL+C was sent)
-    size_t wait = 60;
-    while (wait--)
-    {
-        sleep(1);
-    }
+    // Block thread until someone signals the semaphore to exit the thread
+    sem_wait(&semaphore);
 
     // Clean allocated resource:
     MHD_stop_daemon(daemon);
@@ -202,7 +206,6 @@ static int handle_unknown_url(struct MHD_Connection *connection, const char *url
 {
     char buffer[256] = { 0 };
     snprintf(buffer, sizeof(buffer), "<html><body>The url: '%s' is unknown by the server</body></html>", url);
-
     return handle_helper_pages(connection, buffer);
 }
 

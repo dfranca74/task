@@ -12,6 +12,9 @@
 #include "utils.h"
 #include "database.h"
 
+/**
+ * Used in the greetings message (incremented each time this page is sent back)
+ */
 static size_t counter = 0;
 
 /**

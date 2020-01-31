@@ -13,6 +13,7 @@
 #include "database.h"
 #include "config.h"
 
+// In ram database
 static terminal_t buffer[MAX_DATABASE_REGISTERS];
 
 // Used only to verify if the buffer has available slot(s)
@@ -22,8 +23,6 @@ static size_t added_terminals = 0;
 static int id_register = 1;
 
 #define AVAILABLE_SLOT -1
-
-#undef DEBUG_DATABASE
 
 void init_database(void)
 {
@@ -36,23 +35,6 @@ void init_database(void)
 
     id_register = 1;
     added_terminals = 0;
-
-#ifdef DEBUG_DATABASE
-    // Just for debuging purposes
-    // Simulate a few terminals added into database
-
-    size_t index = 0;
-    buffer[index].id = id_register++;
-    strncpy(buffer[index].card, VISA, MAX_VALUE_SIZE);
-    strncpy(buffer[index].transaction, CREDIT, MAX_VALUE_SIZE);
-
-    index = 10;
-    buffer[index].id = id_register++;
-    strncpy(buffer[index].card, MASTER, MAX_VALUE_SIZE);
-    strncpy(buffer[index].transaction, SAVINGS, MAX_VALUE_SIZE);
-
-    added_terminals += 2;
-#endif
 }
 
 void get_terminal_all(char *pbuf, size_t size)

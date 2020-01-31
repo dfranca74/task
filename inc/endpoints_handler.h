@@ -10,7 +10,6 @@
 
 #include <microhttpd.h>
 
-
 /**
  * Handler that will send a greetings message to the client (to test if server is online)
  * @param connection Connection to send the greetings page

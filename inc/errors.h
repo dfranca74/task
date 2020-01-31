@@ -8,6 +8,9 @@
 #ifndef ERRORS_H_
 #define ERRORS_H_
 
+/**
+ * Set of error values used by the application
+ */
 typedef enum
 {
     ERROR_NO = 0,
