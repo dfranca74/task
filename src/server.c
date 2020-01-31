@@ -18,18 +18,9 @@
 #include "server.h"
 #include "utils.h"
 #include "database.h"
+#include "endpoints_handler.h"
 
 #define DEBUG_SERVER
-
-// Following struct will be used to handle a POST command
-// Reference: https://www.gnu.org/software/libmicrohttpd/tutorial.html#Processing-POST-data
-typedef struct
-{
-    struct MHD_PostProcessor *pp;
-
-   terminal_t terminal;
-
-} connection_info_struct_t;
 
 static pthread_t server_id;
 
@@ -58,18 +49,8 @@ static void request_completed (void *cls,
                                void **con_cls,
                                enum MHD_RequestTerminationCode toe);
 
-static int handle_helper_pages(struct MHD_Connection *connection, const char *helper);
-static int handle_request_terminal_info(struct MHD_Connection *connection, const char *id);
+
 static int handle_unknown_url(struct MHD_Connection *connection, const char *url);
-
-// Auxiliary functions to help debug/understand how http protocol works:
-#ifdef DEBUG_SERVER
-static int callback_print_out_key (void *cls, enum MHD_ValueKind kind, const char *key, const char *value);
-#endif
-
-static const char *greetings_page  = "<html><body>Hello, how are you ?</body></html>";
-static const char *database_full   = "<html><body>Message discarded. Database is full</body></html>";
-static const char *parser_error    = "<html><body>Message discarded. Unknown format</body></html>";
 
 error_t create_server_thread(void)
 {
@@ -186,46 +167,24 @@ static int callback_connection (void *cls,
     // 3) Return a list of all terminals (GET)
 
 
-    // Start testing the end points:
-    // The following code is only for debug/purposes (to help me understand how this server and http works):
-#ifdef DEBUG_SERVER
-    printf ("New method:%s request for url:%s using version %s\n", method, url, version);
-    MHD_get_connection_values (connection, MHD_HEADER_KIND, &callback_print_out_key, NULL);
-#endif
-
     // First end point: greetings page
+    // http://localhost:9876/greetings
     if ((0 == strcmp(url, "/greetings")) && (0 == strcasecmp(method, MHD_HTTP_METHOD_GET)))
     {
-       return handle_helper_pages(connection, greetings_page);
+       return endpoint_greetings(connection);
     }
 
     // Second end point: request terminal information based on its ID number
-    // I will propose this end point url:
     // http://localhost:9876/terminal/read/x    <--- where 'x' will be the terminal id to be searched in the database and prepare the json response
     if ((NULL != strstr(url, "/terminal/read/")) && (0 == strcasecmp(method, MHD_HTTP_METHOD_GET)))
     {
-        // This first substring comparison is relatively weak but enough here (we will discard garbage)
-        // The sanitized search for a valid id will be made inside next function:
-        const char *id = strrchr(url, '/');
-        if (id)
-        {
-            // Advance for what is supposed to be the ID number:
-            ++id;
-            return handle_request_terminal_info(connection, id);
-        }
-
-        return handle_unknown_url(connection, url);
+        return endpoint_terminal_read_id(connection, url);
     }
 
     // Endpoint to read all terminals stored in the database
     if ((NULL != strstr(url, "/terminal/all")) && (0 == strcasecmp(method, MHD_HTTP_METHOD_GET)))
     {
-        char buffer[4096] = { 0 };
-        int offset = snprintf(buffer, sizeof(buffer), "<html><body>\n");
-        get_terminal_all(buffer + offset, sizeof(buffer) - offset);
-        offset = strlen(buffer);
-        snprintf(buffer + offset, sizeof(buffer) - offset, "</body></html>");
-        return handle_helper_pages(connection, buffer);
+        return endpoint_terminal_read_all(connection);
     }
 
     // I ***MUST*** need to have something working to show.
@@ -233,122 +192,16 @@ static int callback_connection (void *cls,
     // Then I will change the logic to add Json processing (my 48 hours limit is finishing)
     if ((0 == strcmp(url, "/terminal/add")) && (0 == strcasecmp(method, MHD_HTTP_METHOD_POST)))
     {
-        connection_info_struct_t *info = *con_cls;
-
-        if (0 != *upload_data_size)
-        {
-            MHD_post_process (info->pp, upload_data, *upload_data_size);
-            *upload_data_size = 0;
-            return MHD_YES;
-        }
-        else
-        {
-            printf("card: %s - transaction: %s\n", info->terminal.card, info->terminal.transaction);
-
-            char buffer[256] = { 0 };
-
-            const char *message = parser_error;
-
-            // This sanity check will verify if the received message was in the expected key/value format:
-            if (strnlen(info->terminal.card, MAX_VALUE_SIZE) &&
-                strnlen(info->terminal.transaction, MAX_VALUE_SIZE))
-            {
-                // We are ready to store the new terminal in the database and send back a
-                // page response with the ID associated with it:
-                if (ERROR_NO == add_terminal(&info->terminal))
-                {
-                    snprintf(buffer,
-                            sizeof(buffer),
-                            "<html><body>id: %ld - card: %s - transaction: %s</body></html>",
-                            info->terminal.id, info->terminal.card, info->terminal.transaction);
-
-                    message = buffer;
-                }
-                else
-                {
-                    message = database_full;
-                }
-            }
-
-            return handle_helper_pages(connection, message);
-        }
+        return endpoint_terminal_add(connection, con_cls, upload_data, upload_data_size);
     }
-
-    // Will start with this initial curl syntax (not json yet):
-    // curl -d "card=value1&transaction=value2" -X POST http://localhost:9876/terminal/add
 
     return handle_unknown_url(connection, url);
 }
 
-#ifdef DEBUG_SERVER
-static int callback_print_out_key (void *cls, enum MHD_ValueKind kind, const char *key, const char *value)
-{
-    (void)(cls);
-    (void)(kind);
-    printf ("%s: %s\n", key, value);
-    return MHD_YES;
-}
-#endif
-
 static int handle_unknown_url(struct MHD_Connection *connection, const char *url)
 {
-    char buffer[512] = { 0 };
-    snprintf(buffer, sizeof(buffer), "<html><body>The url: '%s' is unknown by the server</body></html>", url);
-
-    return handle_helper_pages(connection, buffer);
-}
-
-static int handle_helper_pages(struct MHD_Connection *connection, const char *description)
-{
-    const size_t len = strlen(description);
-    void *page = (void*)(description);
-
-    struct MHD_Response *response = MHD_create_response_from_buffer (len, page, MHD_RESPMEM_MUST_COPY);
-
-    if (!response)
-    {
-        printf("%s - Failed MHD_create_response_from_buffer\n", __func__);
-        return MHD_NO;
-    }
-
-    const int ret = MHD_queue_response (connection, MHD_HTTP_OK, response);
-
-    if (MHD_YES != ret)
-    {
-        printf("%s - Failed MHD_queue_response\n", __func__);
-    }
-
-    MHD_destroy_response (response);
-
-    return ret;
-}
-
-static int handle_request_terminal_info(struct MHD_Connection *connection, const char *id)
-{
-    terminal_t terminal;
-
-    if (ERROR_NO != convert_str_to_int(id, &terminal.id))
-    {
-        return MHD_NO;
-    }
-
-    // Ok, here we have a valid number.
-    // Do we have in our database any terminal with this same number id ?
     char buffer[256] = { 0 };
-
-    if (ERROR_NO == get_terminal(&terminal))
-    {
-        snprintf(buffer,
-                sizeof(buffer),
-                "<html><body>Terminal id[%ld]: card=%s - type=%s</body></html>",
-                terminal.id, terminal.card, terminal.transaction);
-    }
-    else
-    {
-        snprintf(buffer,
-                sizeof(buffer), "<html><body>Terminal id[%ld] not stored in database</body></html>",
-                terminal.id);
-    }
+    snprintf(buffer, sizeof(buffer), "<html><body>The url: '%s' is unknown by the server</body></html>", url);
 
     return handle_helper_pages(connection, buffer);
 }

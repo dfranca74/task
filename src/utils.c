@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "errors.h"
+#include "utils.h"
 
 error_t convert_str_to_int(const char *str, long int *value)
 {
@@ -38,4 +39,29 @@ error_t convert_str_to_int(const char *str, long int *value)
 
     *value = val;
     return result;
+}
+
+int handle_helper_pages(struct MHD_Connection *connection, const char *description)
+{
+    const size_t len = strlen(description);
+    void *page = (void*)(description);
+
+    struct MHD_Response *response = MHD_create_response_from_buffer (len, page, MHD_RESPMEM_MUST_COPY);
+
+    if (!response)
+    {
+        printf("%s - Failed MHD_create_response_from_buffer\n", __func__);
+        return MHD_NO;
+    }
+
+    const int ret = MHD_queue_response (connection, MHD_HTTP_OK, response);
+
+    if (MHD_YES != ret)
+    {
+        printf("%s - Failed MHD_queue_response\n", __func__);
+    }
+
+    MHD_destroy_response (response);
+
+    return ret;
 }
