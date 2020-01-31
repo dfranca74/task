@@ -27,8 +27,7 @@ typedef struct
 {
     struct MHD_PostProcessor *pp;
 
-    char key_card[32];
-    char key_transaction[32];
+   terminal_t terminal;
 
 } connection_info_struct_t;
 
@@ -54,6 +53,11 @@ static int iterate_post_add(void *coninfo_cls,
                             uint64_t off,
                             size_t size);
 
+static void request_completed (void *cls,
+                               struct MHD_Connection *connection,
+                               void **con_cls,
+                               enum MHD_RequestTerminationCode toe);
+
 static int handle_helper_pages(struct MHD_Connection *connection, const char *helper);
 static int handle_request_terminal_info(struct MHD_Connection *connection, const char *id);
 static int handle_unknown_url(struct MHD_Connection *connection, const char *url);
@@ -64,6 +68,8 @@ static int callback_print_out_key (void *cls, enum MHD_ValueKind kind, const cha
 #endif
 
 static const char *greetings_page  = "<html><body>Hello, how are you ?</body></html>";
+static const char *database_full   = "<html><body>Message discarded. Database is full</body></html>";
+static const char *parser_error    = "<html><body>Message discarded. Unknown format</body></html>";
 
 error_t create_server_thread(void)
 {
@@ -96,6 +102,9 @@ static void *worker_thread(void *args)
                                NULL,
                                NULL,
                                &callback_connection,
+                               NULL,
+                               MHD_OPTION_NOTIFY_COMPLETED,
+                               &request_completed,
                                NULL,
                                MHD_OPTION_END);
 
@@ -213,7 +222,7 @@ static int callback_connection (void *cls,
     // Then I will change the logic to add Json processing (my 48 hours limit is finishing)
     if ((0 == strcmp(url, "/terminal/add")) && (0 == strcasecmp(method, MHD_HTTP_METHOD_POST)))
     {
-        connection_info_struct_t *info = *con_cls; // Safe ?
+        connection_info_struct_t *info = *con_cls;
 
         if (0 != *upload_data_size)
         {
@@ -223,16 +232,34 @@ static int callback_connection (void *cls,
         }
         else
         {
-            // How to know when all keys were received ?
-            // Here I ***suppose*** the two keys were already parsed and their values stored into info struct (need to debug to be sure).
-            printf("card: %s - transaction: %s\n", info->key_card, info->key_transaction);
+            printf("card: %s - transaction: %s\n", info->terminal.card, info->terminal.transaction);
 
             char buffer[256] = { 0 };
-            snprintf(buffer,
-                    sizeof(buffer),
-                    "<html><body>POST message received: card: %s - transaction: %s</body></html>",
-                    info->key_card, info->key_transaction);
-            return handle_helper_pages(connection, buffer);
+
+            const char *message = parser_error;
+
+            // This sanity check will verify if the received message was in the expected key/value format:
+            if (strnlen(info->terminal.card, MAX_VALUE_SIZE) &&
+                strnlen(info->terminal.transaction, MAX_VALUE_SIZE))
+            {
+                // We are ready to store the new terminal in the database and send back a
+                // page response with the ID associated with it:
+                if (ERROR_NO == add_terminal(&info->terminal))
+                {
+                    snprintf(buffer,
+                            sizeof(buffer),
+                            "<html><body>id: %ld - card: %s - transaction: %s</body></html>",
+                            info->terminal.id, info->terminal.card, info->terminal.transaction);
+
+                    message = buffer;
+                }
+                else
+                {
+                    message = database_full;
+                }
+            }
+
+            return handle_helper_pages(connection, message);
         }
     }
 
@@ -256,8 +283,6 @@ static int handle_unknown_url(struct MHD_Connection *connection, const char *url
 {
     char buffer[512] = { 0 };
     snprintf(buffer, sizeof(buffer), "<html><body>The url: '%s' is unknown by the server</body></html>", url);
-
-    printf("%s - %s\n", __func__, buffer);
 
     return handle_helper_pages(connection, buffer);
 }
@@ -298,8 +323,6 @@ static int handle_request_terminal_info(struct MHD_Connection *connection, const
 
     // Ok, here we have a valid number.
     // Do we have in our database any terminal with this same number id ?
-
-    // Just to test...oh my God...still have to add all the json logic :) :) How to parse it ?? External library ?
     char buffer[256] = { 0 };
 
     if (ERROR_NO == get_terminal(&terminal))
@@ -340,11 +363,11 @@ static int iterate_post_add(void *coninfo_cls,
 
     if (0 == strcmp(key, "card"))
     {
-        strncpy(info->key_card, data, sizeof(info->key_card));
+        strncpy(info->terminal.card, data, sizeof(info->terminal.card));
     }
     else if (0 == strcmp(key, "transaction"))
     {
-        strncpy(info->key_transaction, data, sizeof(info->key_transaction));
+        strncpy(info->terminal.transaction, data, sizeof(info->terminal.transaction));
     }
     else
     {
@@ -352,8 +375,8 @@ static int iterate_post_add(void *coninfo_cls,
         return MHD_NO;
     }
 
-    if (0 != strlen(info->key_card) &&
-        0 != strlen(info->key_transaction))
+    if (0 != strnlen(info->terminal.card, MAX_VALUE_SIZE) &&
+        0 != strnlen(info->terminal.transaction, MAX_VALUE_SIZE))
     {
         // Ok, we have received all values:
         return MHD_NO;
@@ -361,4 +384,33 @@ static int iterate_post_add(void *coninfo_cls,
 
     // We have more data to be received:
     return MHD_YES;
+}
+
+static void request_completed(void *cls,
+                              struct MHD_Connection *connection,
+                              void **con_cls,
+                              enum MHD_RequestTerminationCode toe)
+{
+    // Clean-up resources:
+    connection_info_struct_t *info = *con_cls;
+
+    (void)(cls);
+    (void)(connection);
+    (void)(toe);
+
+    if (NULL == info)
+    {
+        // Do nothing
+        return;
+    }
+
+    if (info->pp)
+    {
+        MHD_destroy_post_processor(info->pp);
+        info->pp = NULL;
+    }
+
+    free(info);
+    info = NULL;
+    *con_cls = NULL;
 }
